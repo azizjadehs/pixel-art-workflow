@@ -220,6 +220,19 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // ---- list everything already in output/ (browse without running)
+  if (req.method === 'GET' && url.pathname === '/api/outputs') {
+    const files = fs
+      .readdirSync(OUTPUT, { withFileTypes: true })
+      .filter((e) => e.isFile() && /\.(png|aseprite)$/i.test(e.name))
+      .map((e) => {
+        const st = fs.statSync(path.join(OUTPUT, e.name));
+        return { name: e.name, size: st.size, mtime: st.mtimeMs, kind: path.extname(e.name).slice(1).toLowerCase() };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+    return json(res, 200, { files });
+  }
+
   // ---- file download / inline preview
   if (req.method === 'GET' && url.pathname === '/api/file') {
     const p = outputPath(url.searchParams.get('name'));

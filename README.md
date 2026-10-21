@@ -42,6 +42,9 @@ your machine).
 - **View** any `.aseprite` in the browser: the server exports a PNG strip
   of all frames with the local Aseprite CLI and shows that (browsers
   cannot read the `.aseprite` format directly)
+- the **Saved outputs** gallery lists everything already in `output\`, so
+  old runs can be viewed, downloaded or opened without re-running the
+  pipeline
 
 Stop it with `Ctrl+C` in the terminal window.
 

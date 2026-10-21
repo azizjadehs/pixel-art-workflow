@@ -81,6 +81,14 @@
   .preview img { display: block; image-rendering: pixelated; max-width: 100%; background: #0b0c0f; }
   .preview .cap { font-size: 11px; color: var(--muted); margin-top: 6px; }
 
+  .card { display: flex; flex-direction: column; gap: 8px; max-width: 230px; }
+  .card img { max-height: 220px; object-fit: contain; cursor: zoom-in; }
+  .card .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .card .actions a, .card .actions button { font-size: 11px; padding: 5px 9px; }
+  .card .actions a { text-decoration: none; border: 1px solid var(--border); border-radius: 6px;
+                     color: var(--text); background: #232833; }
+  .card .actions a:hover { border-color: var(--accent-dim); }
+
   .files { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .file { display: flex; align-items: center; justify-content: space-between; gap: 10px;
           background: #12141a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
@@ -158,6 +166,14 @@
     <div class="previews" id="previews"></div>
     <div class="files" id="files"></div>
   </div>
+
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--muted)">Saved outputs (output\) &mdash; view without running</div>
+      <button id="refreshOutputs" style="font-size:12px;padding:5px 10px">Refresh</button>
+    </div>
+    <div class="previews" id="gallery"></div>
+  </div>
 </div>
 
 <div id="modal">
@@ -183,6 +199,80 @@ function openView(name) {
   $('modalCap').textContent = name;
   modal.classList.add('show');
 }
+
+async function openAse(name) {
+  try {
+    const res = await fetch('/api/open?name=' + encodeURIComponent(name), { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  } catch (err) {
+    alert('Could not open: ' + err.message);
+  }
+}
+
+// ---------------------------------------------------- saved outputs gallery
+// lists output\ so existing runs can be viewed without running the pipeline
+async function loadOutputs() {
+  const el = $('gallery');
+  try {
+    const res = await fetch('/api/outputs');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    el.innerHTML = '';
+    if (!data.files.length) {
+      el.innerHTML = '<div class="hint">Nothing in output\\ yet - run the pipeline above.</div>';
+      return;
+    }
+    for (const f of data.files) el.appendChild(fileCard(f));
+  } catch (err) {
+    el.innerHTML = '<div class="err">Could not list outputs: ' + err.message + '</div>';
+  }
+}
+
+function fileCard(f) {
+  const isAse = f.name.toLowerCase().endsWith('.aseprite');
+  const box = document.createElement('div');
+  box.className = 'preview card';
+
+  const img = document.createElement('img');
+  img.src = isAse
+    ? '/api/view?name=' + encodeURIComponent(f.name)
+    : '/api/file?name=' + encodeURIComponent(f.name);
+  img.alt = f.name;
+  img.title = isAse ? 'click to enlarge' : f.name;
+  if (isAse) img.addEventListener('click', () => openView(f.name));
+
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.textContent = f.name;
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  if (isAse) {
+    const view = document.createElement('button');
+    view.textContent = 'View';
+    view.addEventListener('click', () => openView(f.name));
+    const open = document.createElement('button');
+    open.textContent = 'Open in Aseprite';
+    open.addEventListener('click', () => openAse(f.name));
+    actions.appendChild(view);
+    actions.appendChild(open);
+  }
+
+  const dl = document.createElement('a');
+  dl.href = '/api/file?name=' + encodeURIComponent(f.name) + '&dl=1';
+  dl.textContent = 'Download';
+  actions.appendChild(dl);
+
+  box.appendChild(img);
+  box.appendChild(cap);
+  box.appendChild(actions);
+  return box;
+}
+
+$('refreshOutputs').addEventListener('click', loadOutputs);
+loadOutputs();
 
 const drop = $('drop');
 const fileInput = $('file');
@@ -279,6 +369,7 @@ function poll(jobId) {
       clearInterval(pollTimer);
       setStatus('done', 'done');
       renderResults(data.result || []);
+      loadOutputs();
       $('run').disabled = false;
     } else if (data.status === 'error') {
       clearInterval(pollTimer);
@@ -335,15 +426,7 @@ function renderResults(files) {
 
       const open = document.createElement('button');
       open.textContent = 'Open in Aseprite';
-      open.addEventListener('click', async () => {
-        try {
-          const res = await fetch('/api/open?name=' + encodeURIComponent(f.name), { method: 'POST' });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-        } catch (err) {
-          alert('Could not open: ' + err.message);
-        }
-      });
+      open.addEventListener('click', () => openAse(f.name));
       actions.appendChild(open);
     }
 
