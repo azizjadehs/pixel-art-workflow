@@ -2,6 +2,10 @@
 
 Turn a piece of your art into a small, editable 2D pixel art character.
 
+New here? **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** explains the whole pipeline
+(Gemini → Aseprite pixelation → projection-based slicing) and the technology
+behind each step.
+
 ## Setup (one time)
 
 Put your Gemini API key in this folder, in `.env` or `.env.txt`:
