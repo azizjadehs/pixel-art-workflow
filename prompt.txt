@@ -1,0 +1,27 @@
+Convert this artwork into a 2D pixel art character reference sheet.
+
+LAYOUT - the same character, 4 views in one row (or 2x2 grid if the
+canvas is tall), evenly spaced, same scale, same baseline:
+1. front view facing viewer
+2. three-quarter view
+3. side view facing right
+4. back view
+
+STYLE - flat retro game art, close to a Stardew Valley sprite sheet:
+- Keep shapes SIMPLE and CHUNKY so the character still reads when
+  shrunk to ~48 pixels tall: big clear silhouette, oversized head
+  relative to the body, thick readable limbs, no tiny details.
+- Flat color fills only. At most 2 tones per material (base + one
+  darker shadow). No gradients, no soft airbrushed shading, no glossy
+  highlights, no texture, no blur, no lighting effects.
+- Bold, high-contrast color choices; dark outlines or dark edge
+  shading around the character where needed for separation.
+- Maximum 12 colors for the whole sheet.
+
+KEEP IDENTICAL to the reference artwork in every view: design, outfit,
+colors, proportions, hair, accessories.
+
+BACKGROUND & EXTRAS:
+- One plain solid background color, completely uniform.
+- No text, no labels, no frames, no borders, no drop shadows, no
+  ground, no floor line, no effects.

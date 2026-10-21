@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Art Workflow</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --border: #2b303a;
+    --text: #e6e8ec;
+    --muted: #8b93a1;
+    --accent: #6ee7a8;
+    --accent-dim: #2f6b4c;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 28px 18px 60px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  #drop {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 26px 16px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--muted);
+    transition: border-color .15s, background .15s;
+  }
+  #drop.hover { border-color: var(--accent); background: #1a2b22; }
+  #drop strong { color: var(--text); }
+  #fileInfo { margin-top: 10px; color: var(--accent); font-size: 13px; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 120px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input[type=number], select {
+    background: #12141a; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 9px; font: inherit; width: 100%;
+  }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border-radius: 7px; border: 1px solid var(--border);
+    background: #232833; color: var(--text);
+    padding: 9px 16px;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent-dim); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0d1a13; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+
+  #log {
+    background: #0f1115; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; height: 180px; overflow: auto; margin: 0;
+    font: 12px/1.55 ui-monospace, Consolas, monospace; color: #b9c1cf;
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  .results { display: none; }
+  .results.show { display: block; }
+  .previews { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .preview { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .preview img { display: block; image-rendering: pixelated; max-width: 100%; background: #0b0c0f; }
+  .preview .cap { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .files { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .file { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          background: #12141a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .file .name { font-size: 13px; }
+  .file .actions { display: flex; gap: 8px; }
+  .file a, .file button { font-size: 12px; padding: 6px 11px; }
+  .file a {
+    text-decoration: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); background: #232833;
+  }
+  .file a:hover { border-color: var(--accent-dim); }
+  .status { font-weight: 600; }
+  .status.running { color: var(--accent); }
+  .status.done { color: var(--accent); }
+  .status.error { color: var(--danger); }
+  .err { color: var(--danger); white-space: pre-wrap; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.78); display: none;
+           align-items: center; justify-content: center; padding: 24px; z-index: 20; }
+  #modal.show { display: flex; }
+  #modal img { max-width: 92vw; max-height: 84vh; image-rendering: pixelated;
+               background: #0b0c0f; border: 1px solid var(--border); border-radius: 8px; }
+  #modal .cap { color: var(--muted); font-size: 12px; margin-top: 8px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pixel Art Workflow</h1>
+  <p class="sub">Upload art &rarr; Gemini character sheet &rarr; 32px-grid pixel art &rarr; sliced sprites.</p>
+
+  <div class="panel">
+    <div id="drop">
+      <div><strong>Drop an image here</strong> or click to choose</div>
+      <div class="hint">png / jpg / webp / gif</div>
+      <div id="fileInfo"></div>
+    </div>
+    <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none">
+
+    <div class="row">
+      <div class="field">
+        <label>Percent of source (0 = use size)</label>
+        <input id="percent" type="number" value="0" min="0" max="400">
+      </div>
+      <div class="field">
+        <label>Size (max px, used when percent = 0)</label>
+        <input id="size" type="number" value="256" min="8" max="1024">
+      </div>
+      <div class="field">
+        <label>Colors</label>
+        <input id="colors" type="number" value="26" min="2" max="256">
+      </div>
+      <div class="field">
+        <label>Filter</label>
+        <select id="filter">
+          <option value="nearest">nearest</option>
+          <option value="average">average</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <button id="run" class="primary" disabled>Run pipeline</button>
+      <span id="status" class="status"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Log</div>
+    <pre id="log">Ready. Pick an image.</pre>
+  </div>
+
+  <div class="panel results" id="results">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Result</div>
+    <div class="previews" id="previews"></div>
+    <div class="files" id="files"></div>
+  </div>
+</div>
+
+<div id="modal">
+  <div>
+    <img id="modalImg" alt="">
+    <div class="cap" id="modalCap"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let picked = null;
+let pollTimer = null;
+
+// .aseprite files are rendered server-side through the local Aseprite CLI
+const modal = $('modal');
+modal.addEventListener('click', () => modal.classList.remove('show'));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') modal.classList.remove('show');
+});
+function openView(name) {
+  $('modalImg').src = '/api/view?name=' + encodeURIComponent(name) + '&t=' + Date.now();
+  $('modalCap').textContent = name;
+  modal.classList.add('show');
+}
+
+const drop = $('drop');
+const fileInput = $('file');
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('hover'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+drop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('hover');
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files && fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+function setFile(f) {
+  if (!f.type.startsWith('image/')) return alert('Please choose an image file.');
+  picked = f;
+  $('fileInfo').textContent = f.name + ' (' + (f.size / 1024).toFixed(0) + ' KB)';
+  $('run').disabled = false;
+}
+
+function log(line) {
+  const el = $('log');
+  el.textContent += '\n' + line;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+$('run').addEventListener('click', async () => {
+  if (!picked) return;
+  $('run').disabled = true;
+  $('results').classList.remove('show');
+  $('previews').innerHTML = '';
+  $('files').innerHTML = '';
+  $('log').textContent = 'Uploading ' + picked.name + ' ...';
+  setStatus('running...', 'running');
+
+  const params = new URLSearchParams({
+    name: picked.name,
+    size: $('size').value,
+    percent: $('percent').value,
+    colors: $('colors').value,
+    filter: $('filter').value,
+  });
+
+  try {
+    const res = await fetch('/api/run?' + params.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: picked,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    $('log').textContent = 'Job started: ' + data.jobId;
+    poll(data.jobId);
+  } catch (err) {
+    setStatus('error', 'error');
+    log('ERROR: ' + err.message);
+    $('run').disabled = false;
+  }
+});
+
+function poll(jobId) {
+  let seen = 0;
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    let data;
+    try {
+      const res = await fetch('/api/job?id=' + encodeURIComponent(jobId));
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    } catch (err) {
+      clearInterval(pollTimer);
+      setStatus('error', 'error');
+      log('ERROR: ' + err.message);
+      $('run').disabled = false;
+      return;
+    }
+
+    if (data.logs.length > seen) {
+      $('log').textContent = data.logs.join('\n');
+      $('log').scrollTop = $('log').scrollHeight;
+      seen = data.logs.length;
+    }
+
+    if (data.status === 'done') {
+      clearInterval(pollTimer);
+      setStatus('done', 'done');
+      renderResults(data.result || []);
+      $('run').disabled = false;
+    } else if (data.status === 'error') {
+      clearInterval(pollTimer);
+      setStatus('error', 'error');
+      if (data.error) log('ERROR: ' + data.error);
+      $('run').disabled = false;
+    }
+  }, 700);
+}
+
+function renderResults(files) {
+  $('results').classList.add('show');
+  const previews = $('previews');
+  const filesEl = $('files');
+
+  const visual = files.filter((f) => f.name.endsWith('.png') || f.name.endsWith('.aseprite'));
+  for (const f of visual) {
+    const box = document.createElement('div');
+    box.className = 'preview';
+    const img = document.createElement('img');
+    img.src = f.name.endsWith('.aseprite')
+      ? '/api/view?name=' + encodeURIComponent(f.name)
+      : '/api/file?name=' + encodeURIComponent(f.name);
+    img.alt = f.name;
+    const cap = document.createElement('div');
+    cap.className = 'cap';
+    cap.textContent = f.name + (f.name.endsWith('.aseprite') ? ' (exported view)' : '');
+    box.appendChild(img);
+    box.appendChild(cap);
+    previews.appendChild(box);
+  }
+
+  for (const f of files) {
+    const row = document.createElement('div');
+    row.className = 'file';
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = f.label + ' — ' + f.name;
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const dl = document.createElement('a');
+    dl.href = '/api/file?name=' + encodeURIComponent(f.name) + '&dl=1';
+    dl.textContent = 'Download';
+    actions.appendChild(dl);
+
+    if (f.name.endsWith('.aseprite')) {
+      const view = document.createElement('button');
+      view.textContent = 'View';
+      view.addEventListener('click', () => openView(f.name));
+      actions.appendChild(view);
+
+      const open = document.createElement('button');
+      open.textContent = 'Open in Aseprite';
+      open.addEventListener('click', async () => {
+        try {
+          const res = await fetch('/api/open?name=' + encodeURIComponent(f.name), { method: 'POST' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        } catch (err) {
+          alert('Could not open: ' + err.message);
+        }
+      });
+      actions.appendChild(open);
+    }
+
+    row.appendChild(name);
+    row.appendChild(actions);
+    filesEl.appendChild(row);
+  }
+}
+</script>
+</body>
+</html>
