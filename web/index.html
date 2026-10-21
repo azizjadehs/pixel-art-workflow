@@ -110,9 +110,14 @@
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,.78); display: none;
            align-items: center; justify-content: center; padding: 24px; z-index: 20; }
   #modal.show { display: flex; }
-  #modal img { max-width: 92vw; max-height: 84vh; image-rendering: pixelated;
-               background: #0b0c0f; border: 1px solid var(--border); border-radius: 8px; }
-  #modal .cap { color: var(--muted); font-size: 12px; margin-top: 8px; text-align: center; }
+  #modal .modal-box { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #modal canvas { image-rendering: pixelated; background: #0b0c0f;
+                  border: 1px solid var(--border); border-radius: 8px;
+                  max-width: 88vw; max-height: 70vh; }
+  #modal .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  #modal .controls button, #modal .controls select { font-size: 12px; padding: 6px 10px; }
+  #modal .frame-info { font-size: 12px; color: var(--muted); min-width: 90px; text-align: center; }
+  #modal .cap { color: var(--muted); font-size: 12px; text-align: center; }
 </style>
 </head>
 <body>
@@ -177,8 +182,21 @@
 </div>
 
 <div id="modal">
-  <div>
-    <img id="modalImg" alt="">
+  <div class="modal-box">
+    <canvas id="modalCanvas"></canvas>
+    <div class="controls">
+      <button id="playBtn">Pause</button>
+      <button id="prevBtn" title="previous frame (←)">&#9664;</button>
+      <button id="nextBtn" title="next frame (→)">&#9654;</button>
+      <span id="frameInfo" class="frame-info"></span>
+      <select id="zoom" title="zoom">
+        <option value="1">1&times;</option>
+        <option value="2" selected>2&times;</option>
+        <option value="4">4&times;</option>
+        <option value="8">8&times;</option>
+      </select>
+      <button id="modalOpen">Open in Aseprite</button>
+    </div>
     <div class="cap" id="modalCap"></div>
   </div>
 </div>
@@ -188,17 +206,139 @@ const $ = (id) => document.getElementById(id);
 let picked = null;
 let pollTimer = null;
 
-// .aseprite files are rendered server-side through the local Aseprite CLI
+// .aseprite files are rendered server-side through the local Aseprite CLI:
+// /api/sprite returns the exported sheet + real frame rects/durations, and the
+// canvas player below replays them at the file's own timing.
 const modal = $('modal');
-modal.addEventListener('click', () => modal.classList.remove('show'));
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') modal.classList.remove('show');
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) closeView();
 });
-function openView(name) {
-  $('modalImg').src = '/api/view?name=' + encodeURIComponent(name) + '&t=' + Date.now();
-  $('modalCap').textContent = name;
-  modal.classList.add('show');
+
+let sprite = null;
+let frameIdx = 0;
+let playing = true;
+let lastTs = 0;
+let acc = 0;
+let rafId = 0;
+let currentAse = null;
+
+function closeView() {
+  modal.classList.remove('show');
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  playing = false;
 }
+
+async function openView(name) {
+  try {
+    const res = await fetch('/api/sprite?name=' + encodeURIComponent(name));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+
+    const img = new Image();
+    img.src = data.sheet + '&t=' + Date.now();
+    await img.decode();
+
+    sprite = data;
+    sprite.img = img;
+    currentAse = name;
+    frameIdx = 0;
+    acc = 0;
+    lastTs = 0;
+    playing = true;
+    $('playBtn').textContent = 'Pause';
+    $('modalCap').textContent =
+      name + ' — ' + data.frames.length + ' frame' + (data.frames.length === 1 ? '' : 's');
+    resizeCanvas();
+    drawFrame();
+    modal.classList.add('show');
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(tick);
+  } catch (err) {
+    alert('Could not view: ' + err.message);
+  }
+}
+
+function frameDuration() {
+  return (sprite.frames[frameIdx] && sprite.frames[frameIdx].duration) || 100;
+}
+
+function resizeCanvas() {
+  const zoom = Number($('zoom').value);
+  const w = Math.max(...sprite.frames.map((f) => f.w));
+  const h = Math.max(...sprite.frames.map((f) => f.h));
+  const canvas = $('modalCanvas');
+  canvas.width = w * zoom;
+  canvas.height = h * zoom;
+  canvas.style.width = Math.min(w * zoom, window.innerWidth * 0.88) + 'px';
+  canvas.style.height = 'auto';
+}
+
+function drawFrame() {
+  const f = sprite.frames[frameIdx];
+  const zoom = Number($('zoom').value);
+  const canvas = $('modalCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(sprite.img, f.x, f.y, f.w, f.h, 0, 0, f.w * zoom, f.h * zoom);
+
+  const tag = (sprite.tags || []).find((t) => frameIdx >= t.from && frameIdx <= t.to);
+  $('frameInfo').textContent =
+    (frameIdx + 1) + '/' + sprite.frames.length + (tag ? ' · ' + tag.name : '');
+}
+
+function tick(ts) {
+  if (!sprite || !modal.classList.contains('show')) { rafId = 0; return; }
+  rafId = requestAnimationFrame(tick);
+  if (!playing) { lastTs = ts; return; }
+  if (!lastTs) lastTs = ts;
+  acc += ts - lastTs;
+  lastTs = ts;
+
+  let guard = 0;
+  while (acc >= frameDuration() && guard++ < 200) {
+    acc -= frameDuration();
+    frameIdx = (frameIdx + 1) % sprite.frames.length;
+    drawFrame();
+  }
+}
+
+function step(delta) {
+  if (!sprite) return;
+  frameIdx = (frameIdx + delta + sprite.frames.length) % sprite.frames.length;
+  acc = 0;
+  drawFrame();
+}
+
+$('playBtn').addEventListener('click', () => {
+  playing = !playing;
+  lastTs = 0;
+  $('playBtn').textContent = playing ? 'Pause' : 'Play';
+});
+$('prevBtn').addEventListener('click', () => step(-1));
+$('nextBtn').addEventListener('click', () => step(1));
+$('zoom').addEventListener('change', () => {
+  if (!sprite) return;
+  resizeCanvas();
+  drawFrame();
+});
+$('modalOpen').addEventListener('click', () => {
+  if (currentAse) openAse(currentAse);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!modal.classList.contains('show')) return;
+  if (e.key === 'Escape') return closeView();
+  if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
+  if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
+  if (e.key === ' ') {
+    playing = !playing;
+    lastTs = 0;
+    $('playBtn').textContent = playing ? 'Pause' : 'Play';
+    e.preventDefault();
+  }
+});
 
 async function openAse(name) {
   try {

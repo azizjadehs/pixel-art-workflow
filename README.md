@@ -39,9 +39,10 @@ your machine).
 - no `npm install` - the server uses only Node's built-in modules
 - binds to `127.0.0.1` only, so it is not reachable from other machines
 - needs Node.js and the local Aseprite build
-- **View** any `.aseprite` in the browser: the server exports a PNG strip
-  of all frames with the local Aseprite CLI and shows that (browsers
-  cannot read the `.aseprite` format directly)
+- **View** any `.aseprite` in the browser: the server exports the frames
+  with the local Aseprite CLI and an in-page canvas player replays them at
+  the file's real frame durations (play/pause, step, zoom). Browsers cannot
+  read the `.aseprite` format directly, so Aseprite's own exporter is used.
 - the **Saved outputs** gallery lists everything already in `output\`, so
   old runs can be viewed, downloaded or opened without re-running the
   pipeline

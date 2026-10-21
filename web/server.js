@@ -55,35 +55,39 @@ fs.mkdirSync(PREVIEW, { recursive: true });
 
 // ------------------------------------------------------- .aseprite view
 // browsers cannot read .aseprite files, so ask the local Aseprite CLI to
-// export a PNG strip of all frames and serve that instead
+// export a PNG sheet + frame metadata (name, rect, duration) and serve that
 function exportPreview(asePath) {
   return new Promise((resolve, reject) => {
-    const dest = path.join(PREVIEW, path.basename(asePath) + '.png');
+    const png = path.join(PREVIEW, path.basename(asePath) + '.png');
+    const jsonPath = png + '.json';
     let srcStat;
     try {
       srcStat = fs.statSync(asePath);
     } catch {
       return reject(new Error('file not found'));
     }
-    if (fs.existsSync(dest) && fs.statSync(dest).mtimeMs >= srcStat.mtimeMs) {
-      return resolve(dest);
+    if (
+      fs.existsSync(png) &&
+      fs.existsSync(jsonPath) &&
+      fs.statSync(png).mtimeMs >= srcStat.mtimeMs
+    ) {
+      return resolve({ png, json: jsonPath });
     }
     if (!ASE) return reject(new Error('Aseprite not found - set ASEPRITE_EXE or add aseprite to PATH'));
 
-    const dataPath = dest + '.json';
     const child = spawn(
       ASE,
-      ['-b', asePath, '--sheet', dest, '--data', dataPath, '--format', 'json-hash', '--sheet-type', 'horizontal'],
+      ['-b', asePath, '--sheet', png, '--data', jsonPath, '--format', 'json-hash', '--sheet-type', 'horizontal'],
       { cwd: ROOT, windowsHide: true }
     );
     let err = '';
     child.stderr.on('data', (d) => (err += d.toString()));
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code !== 0 || !fs.existsSync(dest)) {
+      if (code !== 0 || !fs.existsSync(png)) {
         return reject(new Error('Aseprite export failed: ' + err.trim()));
       }
-      resolve(dest);
+      resolve({ png, json: jsonPath });
     });
   });
 }
@@ -255,9 +259,43 @@ const server = http.createServer(async (req, res) => {
       return json(res, 400, { error: 'not an .aseprite file' });
     }
     try {
-      const png = await exportPreview(p);
+      const { png } = await exportPreview(p);
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
       fs.createReadStream(png).pipe(res);
+    } catch (e) {
+      json(res, 500, { error: String((e && e.message) || e) });
+    }
+    return;
+  }
+
+  // ---- frame data for the in-browser player (real rects, durations, tags)
+  if (req.method === 'GET' && url.pathname === '/api/sprite') {
+    const p = outputPath(url.searchParams.get('name'));
+    if (!p || !fs.existsSync(p)) return json(res, 404, { error: 'not found' });
+    if (path.extname(p).toLowerCase() !== '.aseprite') {
+      return json(res, 400, { error: 'not an .aseprite file' });
+    }
+    try {
+      const { json: dataPath } = await exportPreview(p);
+      const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+      const frames = Object.values(data.frames || {}).map((fr) => ({
+        x: fr.frame.x,
+        y: fr.frame.y,
+        w: fr.frame.w,
+        h: fr.frame.h,
+        duration: fr.duration || 100,
+      }));
+      const tags = (data.meta.frameTags || []).map((t) => ({
+        name: t.name,
+        from: t.from,
+        to: t.to,
+      }));
+      json(res, 200, {
+        sheet: '/api/view?name=' + encodeURIComponent(path.basename(p)),
+        frames,
+        tags,
+        size: data.meta.size,
+      });
     } catch (e) {
       json(res, 500, { error: String((e && e.message) || e) });
     }
